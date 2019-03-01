@@ -1,0 +1,311 @@
+# Analysis of Weather Storm Data for Impact on Population Health and Economics
+by mas16, March 2019
+
+## Synopsis
+This report uses the U.S. National Oceanic and Atmospheric (NOAA) storm database to determine the following:   
+
+(1) Across the U.S., which types of events are the most harmful with respect to population health?  
+(2) Across the U.S., which types of events have the greatest economic consequences?  
+
+The database lists storms as event types with 48 total unique event types documented. The analysis first involves cleaning the event types to standardize all reported events according to the 48 total unique event types documented. Effects on population health are evaluated using the total number of fatalities and injuries due to an event. Effects on economics are evaluated by summing the total cost of property damage and crop damage due to an event.
+
+The results of the analysis show tornados have the most severe impact on human health and floods have the most severe economic consequences.
+
+## Computer Setup
+*The following information specifies the software and hardware used to generate the data analysis*
+
+**Language:** R version 3.5.1 (2018-07-02)  
+**Editor:** R Studio on Platform x86_64-apple-darwin15.6.0 (64-bit)  
+**Operating System:** macOS Mojave Version 10.14.1  
+**Computer:** MacBook Air  
+**Processor:** 1.3 GHz Intel Core i5  
+**Memory:** 4GB 1600 MHz DDR3  
+
+## Loading the Data
+The file containing the data should be in compressed format (.bz2) and located in the working directory for the loading and processing steps outlined below to be reproducible. The file should be named "repdata_data_StormData.csv.bz2" 
+
+This file can be decompressed directly using ```fread``` from the ```data.table``` package. Note: the ```R.utils``` package must also be instralled in order to decompress .bz2 files.
+
+```{r, message=FALSE, warning=FALSE}
+library(R.utils)
+library(data.table)
+
+# Assign data file name
+zip_file <- "repdata_data_StormData.csv.bz2"
+# Load the data
+storm <- fread(zip_file)
+```
+
+The dimensions of the data can be obtained using the following:
+
+```{r}
+# Get dimensions of data
+dim(storm)
+```
+
+The data contains 902297 rows and 37 columns. The names of the columns are shown below.
+
+```{r}
+# Get names of the columns
+names(storm)
+```
+
+Many of these columns are not of interest to this report. Only the columns relevant to event type, population health, and economic impact are retained:
+
+```{r, message=FALSE}
+library(dplyr)
+
+# Columns to keep
+col_keep <- c("EVTYPE","FATALITIES","INJURIES","PROPDMG","PROPDMGEXP","CROPDMG","CROPDMGEXP")
+
+# Subset data
+storm_df <- select(storm, col_keep)
+```
+
+The type of storm is listed in the ```EVTYPE``` column. According to the dataset documentation, there should be 48 unique event types. The number of unique event types is shown below.
+
+```{r}
+# Get types of storm events listed in dataset
+length(unique(storm$EVTYPE))
+```
+
+Since this number is significantly greater than 48, there must be some inconsistencies with the documentation of event type. We must therefore process the data to consolidate the event types. 
+
+In order to determine the cost associated with property damage and crop damage, we need to understand the columns in the dataset. According to the documentation, property damage and crop damage are listed as dollar amounts. They must be multiplied by the ```PROPDMGEXP``` and ```CROPDMGEXP```, respectively. The values are shown below.
+
+```{r}
+unique(storm$PROPDMGEXP)
+unique(storm$CROPDMGEXP)
+```
+
+Because these values are coded, they must be processed and transformed. The following list of transformations was provided:
+
+H,h = 100  
+K,k = 1000  
+M,m = 1000000  
+B,b = 1000000000  
++ = 1  
+- = 0  
+? = 0  
+0,1,2,3,4,5,6,7,8 = 10  
+
+## Data Processing 
+Regular expressions are used to identify patterns associated with the 48 documented event types. Matching event types are then consolidated and matched to one of the 48 documented event types. This is done using the following R code.
+
+```{r, message=FALSE}
+library(stringr)
+
+# Make all event types uppercase
+storm_df$EVTYPE <- toupper(storm_df$EVTYPE)
+
+# Match event type name patters based on regular expressions and convert to appropriate name
+# Note: some event type names have numeric characters in them to avoid degenerate pattern mapping
+# for similar events. These are removed later.
+
+clean_evtypes <- function(datacol){
+        datacol <- gsub("^ASTRO.*", "ALT", datacol)
+        datacol <- gsub("^AVA.*", "AVALANCHE", datacol)
+        datacol <- gsub("^BLI.*", "BLIZZARD", datacol)
+        datacol <- gsub("^COA.*|CSTL(.*)FLOOD", "COASTAL FL00D", datacol)
+        datacol <- gsub("^COLD.*", "C0LD/WINDCHILL", datacol)
+        datacol <- gsub("DEBRIS.*", "DEBRIS FLOW", datacol)
+        datacol <- gsub("FREEZING FOG.*", "FREEZING F0G", datacol)
+        datacol <- str_replace(datacol, "(.*)FOG", "DENSE FOG" )
+        datacol <- gsub("^DENSE FOG.*|WALL CLOUD", "DENSE FOG", datacol)
+        datacol <- str_replace(datacol, "(.*)SMOKE", "DENSE SMOKE" )
+        datacol <- gsub("^DENSE SMOKE.*", "DENSE SMOKE", datacol)
+        datacol <- str_replace(datacol, "(.*)DROUGHT|BELOW NORMAL PRECIPITATION", "DROUGHT" )
+        datacol <- gsub("^DROUGHT.*|DRIEST MONTH|DRY", "DROUGHT", datacol)
+        datacol <- gsub("DUST DEV.*", "DUST DEVIL", datacol)
+        datacol <- gsub("^DUST STORM.*|^DUSTSTORM.*|BLOWING DUST", "DUST STORM", datacol)
+        datacol <- str_replace(datacol, "(.*)EXCESSIVE HEAT.*|WARM|(.*)EXCESSIVE HE4T.*
+                               |(.*)HIGH TEMPERATURE", "EXCESSIVE HE4T")
+        datacol <- gsub("EXCESSIVE HE4T.*", "EXCESSIVE HE4T", datacol)
+        datacol <- str_replace(datacol, "(.*)COLD|(.*)COOL|(.*)LOW TEMP", "EXTREME COLD" )
+        datacol <- gsub("^EXTREME COLD.*|LOW TEMPERATURE RECORD|RECORD LOW|
+                        UNSEASONAL LOW TEMP", "EXTREME COLD", datacol)
+        datacol <- str_replace(datacol, "(.*)FLASH FLOOD", "FLASH FL00D" )
+        datacol <- gsub("^FLASH FL00D.*", "FLASH FL00D", datacol)
+        datacol <- str_replace(datacol, "LAKE(.*) FLOOD", "LAKESHORE FL00D" )
+        datacol <- gsub("^LAKESHORE FL00D.*", "LAKESHORE FL00D", datacol)
+        datacol <- str_replace(datacol, "(.*)FLOOD", "FLOOD" )
+        datacol <- gsub("^FLOOD.*", "FLOOD", datacol)
+        datacol <- str_replace(datacol, "(.*)FROST|FREEZE", "FROST/FREEZE" )
+        datacol <- gsub("^FROST/FREEZE.*", "FROST/FREEZE", datacol)
+        datacol <- str_replace(datacol, "(.*)FUNNEL", "FUNNEL CLOUD" )
+        datacol <- gsub("^FUNNEL CLOUD.*", "FUNNEL CLOUD", datacol)
+        datacol <- gsub("^MARINE HAIL.*", "MARINE H4IL", datacol)
+        datacol <- str_replace(datacol, "(.*)HAIL", "HAIL" )
+        datacol <- gsub("^HAIL.*", "HAIL", datacol)
+        datacol <- str_replace(datacol, "(.*)HEAT|HOT SPELL", "HEAT" )
+        datacol <- gsub("^HEAT.*", "HEAT", datacol)
+        datacol <- str_replace(datacol, "(.*)RAIN", "HEAVY RAIN" )
+        datacol <- gsub("^HEAVY RAIN.*", "HEAVY RAIN", datacol)
+        datacol <- gsub("^LAKE(.*)SNOW", "LAKE-EFFECT SN0W", datacol)
+        datacol <- str_replace(datacol, "(.*)SNOW", "HEAVY SNOW" )
+        datacol <- gsub("^HEAVY SNOW.*", "SNOW", datacol)
+        datacol <- str_replace(datacol, "(.*)SURF", "HIGH SURF" )
+        datacol <- gsub("^HIGH SURF.*", "HIGH SURF", datacol)
+        datacol <- gsub("^MARINE HIGH WIND.*", "MARINE HIGH W1ND", datacol)
+        datacol <- gsub("^MARINE STRONG WIND.*", "MARINE STRONG W1ND", datacol)
+        datacol <- gsub("MARINE(.*)T(.*)WIND", "MARINE THUNDERST0RM W1ND", datacol)
+        datacol <- str_replace(datacol, "(.*)HIGH(.*)WIND.*", "HIGH W1ND" )
+        datacol <- gsub("^HIGH W1ND.*", "HIGH W1ND", datacol)
+        datacol <- gsub("^TYP.*|HUR.*", "HURRICANE/TYPHOON", datacol)
+        datacol <- gsub("ICE(.*)STORM", "ICE STORM", datacol)
+        datacol <- str_replace(datacol, "(.*)LIGHTN", "LIGHTNING" )
+        datacol <- gsub("^LIGHTNING.*", "LIGHTNING", datacol)
+        datacol <- gsub("^RIP.*", "RIP CURRENT", datacol)
+        datacol <- str_replace(datacol, "(.*)SLEET", "SLEET" )
+        datacol <- gsub("^SLEET.*", "SLEET", datacol)
+        datacol <- gsub("^STORM SURGE.*", "STORM SURGE/TIDE", datacol)
+        datacol <- str_replace(datacol, "(.*)STRONG WIND|WIND", "STRONG WIND" )
+        datacol <- gsub("^STRONG WIND.*", "STRONG WIND", datacol)
+        datacol <- str_replace(datacol, "(.*)THUNDER(.*)WIN.*", "THUNDERST0RM WIND" )
+        datacol <- gsub("^THUNDERST0RM WIND.*|^TS(.*)WIND", "THUNDERST0RM WIND", datacol)
+        datacol <- str_replace(datacol, "(.*)THUNDERSTORM|(.*)TSTM", "THUNDERST0RM WIND" )
+        datacol <- str_replace(datacol, "(.*)WATERSPOUT", "WATERSPOUT" )
+        datacol <- gsub("^WATERSPOUT.*", "WATERSPOUT", datacol)
+        datacol <- str_replace(datacol, "(.*)TORN", "TORNADO" )
+        datacol <- gsub("^TORNADO.*|GUSTNADO.*", "TORNADO", datacol)
+        datacol <- gsub("^TROPICAL STORM.*", "TROPICAL STORM", datacol)
+        datacol <- gsub("^VOLCANIC.*", "VOLCANIC ASH", datacol)
+        datacol <- gsub("WILD(.*)FIRE", "WILDFIRE", datacol)
+        datacol <- str_replace(datacol, "(.*)WINTER(.*)STORM", "WINTER STORM" )
+        datacol <- gsub("^WINTER STORM.*", "WINTER STORM", datacol)
+        datacol <- str_replace(datacol, "(.*)WINTER(.*)WEATHER", "WINTER WEATHER" )
+        datacol <- gsub("^WINTER WEATHER.*", "WINTER WEATHER", datacol)
+        return(datacol)
+}
+
+# Convert names back to original
+final_evtype <- function(datacol){
+        datacol <- clean_evtypes(datacol)
+        datacol <- str_replace(datacol, "ALT", "ATMOSPHERIC LOW TIDE")
+        datacol <- str_replace(datacol, "(.*)DROUGHT", "DROUGHT")
+        datacol <- str_replace(datacol, "COASTAL FL00D", "COASTAL FLOOD")
+        datacol <- str_replace(datacol, "C0LD/WINDCHILL|WIND(.*)CHILL", "COLD/WINDCHILL")
+        datacol <- str_replace(datacol, "FREEZING F0G", "FREEZING FOG")
+        datacol <- str_replace(datacol, "(.*)EXCESSIVE HE4T|(.*)EXCESSIVE HEAT", "EXCESSIVE HEAT")
+        datacol <- str_replace(datacol, "FLASH FL00D", "FLASH FLOOD")
+        datacol <- str_replace(datacol, "LAKESHORE FL00D", "LAKESHORE FLOOD")
+        datacol <- str_replace(datacol, "MARINE H4IL", "MARINE HAIL")
+        datacol <- str_replace(datacol, "MARINE THUNDERST0RM W1ND", "MARINE THUNDERSTORM WIND")
+        datacol <- str_replace(datacol, "HIGH W1ND", "HIGH WIND")
+        datacol <- str_replace(datacol, "THUNDERST0RM WIND", "THUNDERSTORM WIND")
+        datacol <- str_replace(datacol, "LAKE-EFFECT SN0W", "LAKE-EFFECT SNOW")
+        datacol <- str_replace(datacol, "MARINE STRONG W1ND", "MARINE STRONG WIND")
+        datacol <- str_replace(datacol, "MARINE HIGH W1ND", "MARINE HIGH WIND")
+        return(datacol)
+}
+
+# Names of the 48 events in the official documentation
+clean_names <- c("ATMOSPHERIC LOW TIDE", "AVALANCHE", "BLIZZARD", "COASTAL FLOOD", "COLD/WINDCHILL",
+                 "DEBRIS FLOW", "FREEZING FOG", "DENSE FOG", "DENSE SMOKE",
+                 "DROUGHT", "DUST DEVIL", "DUST STORM", "EXCESSIVE HEAT", "EXTREME COLD",
+                 "FLASH FLOOD", "LAKESHORE FLOOD", "FLOOD", "FROST/FREEZE", "FUNNEL CLOUD",
+                 "MARINE HAIL", "HAIL", "HEAT", "HEAVY RAIN", "LAKE-EFFECT SNOW", "SNOW",
+                 "HIGH SURF", "MARINE HIGH WIND", "MARINE STRONG WIND", "MARINE THUNDERSTORM WIND",
+                 "HIGH WIND", "HURRICANE/TYPHOON", "ICE STORM", "LIGHTNING", "RIP CURRENT",
+                 "SLEET", "STORM SURGE/TIDE", "STRONG WIND", "THUNDERSTORM WIND", "WATERSPOUT",
+                 "TORNADO", "TROPICAL STORM", "VOLCANIC ASH", "WILDFIRE", "WINTER STORM", 
+                 "WINTER WEATHER", "SEICHE", "TROPICAL DEPRESSION", "TSUNAMI")
+
+# Execute cleaning of event types
+storm_df$EVTYPE <- clean_evtypes(storm_df$EVTYPE)
+storm_df$EVTYPE <- final_evtype(storm_df$EVTYPE)
+
+# Filter out even types that do not correspond to one of the 48 official events
+storm_df <- filter(storm_df, EVTYPE %in% clean_names)
+```
+
+Similarly, we use regular expressions to process and transform the ```PROPDMGEXP``` and ```CROPDMGEXP``` values. 
+
+```{r}
+# Match the appropriate coded EXP value and transform
+clean_exp <- function(coldata){
+        coldata <- gsub("[012345678]", "10", coldata)
+        coldata <- gsub("[hH]", "100", coldata)
+        coldata <- gsub("[kK]", "1000", coldata)
+        coldata <- gsub("[mM]", "1000000", coldata)
+        coldata <- gsub("[bB]", "1000000000", coldata)
+        coldata <- gsub("\\?", "0", coldata)
+        coldata <- gsub("\\+", "1", coldata)
+        coldata <- gsub("-", "0", coldata)
+        coldata[coldata==""] <- "0"
+        return(as.numeric(coldata))
+}
+
+storm_df$PROPDMGEXP <- clean_exp(storm_df$PROPDMGEXP)
+storm_df$CROPDMGEXP <- clean_exp(storm_df$CROPDMGEXP)
+```
+
+Using the transformed ```PROPDMGEXP``` and ```CROPDMGEXP``` values, we can calculate the total cost associated with each event type.
+
+```{r}
+# Total cost due to property damage
+storm_df <- mutate(storm_df, TOTALPD=PROPDMG*PROPDMGEXP)
+# Total cost due to crop damage
+storm_df <- mutate(storm_df, TOTALCD=CROPDMG*CROPDMGEXP)
+# Sum of property and crop damage
+storm_df <- mutate(storm_df, TOTALCOST=TOTALPD+TOTALCD)
+```
+
+## Results
+
+Now that the data have been processed and transformed, we can determine which events are the highest burden on human health and economics.
+
+First, consider human health in terms of fatalities and injuries:
+
+```{r}
+# Fatalities
+all_fatalities <- aggregate(FATALITIES ~ EVTYPE, storm_df, FUN=sum)
+all_fatalities <- arrange(all_fatalities, desc(FATALITIES))
+
+# Injuries
+all_injuries <- aggregate(INJURIES ~ EVTYPE, storm_df, FUN=sum)
+all_injuries <- arrange(all_injuries, desc(INJURIES))
+```
+
+The bar graphs below show the top ten events with highest number of fatalities and injuries. 
+
+```{r, fig.width=14}
+par(mfrow=c(1,2), mar=c(12, 4, 3, 2))
+
+# Total Deaths Plot
+barplot(all_fatalities$FATALITIES[1:10], las=3, names.arg=all_fatalities$EVTYPE[1:10], 
+        main="Events with Highest Number of Fatalities", ylab="Number of Fatalities", col="blue")
+
+# Total Injuries
+barplot(all_injuries$INJURIES[1:10], las=3, names.arg=all_injuries$EVTYPE[1:10], 
+        main="Events with Highest Number of Injuries", ylab="Number of Injuries", col="blue")
+```
+
+It is clear that tornados have the highest impact on human health because they result in the most fatalities and injuries. Excessive heat and heat produce the second and third highest number of fatalities, respectively. Thunderstorm winds produce the second highest number of injuries and floods produce the third highest number of injuries. 
+
+Next, consider economic impact:
+
+```{r}
+# Total cost associated with damages from a given event
+total_cost <- aggregate(TOTALCOST ~ EVTYPE, storm_df, FUN=sum)
+total_cost <- arrange(total_cost, desc(TOTALCOST))
+```
+
+The bar graph below shows the top ten events with the highest cost in billions of U.S. Dollars (USD):
+
+```{r}
+par(mar=c(12, 4, 3, 2))
+# Total Cost Plot
+barplot(total_cost$TOTALCOST[1:10]/10^9, las=3, names.arg=total_cost$EVTYPE[1:10], 
+        main="Events with Highest Total Cost", ylab="Cost ($Billions USD)", col="blue")
+```
+
+Flood results in highest costing damage, followed by Hurricane/Typhoon and Tornado. 
+
+## Conclusion
+
+The results of the data analysis show:  
+
+**Tornados are the most harmful event to human health.**  
+
+**Floods have the greatest economic impact**
