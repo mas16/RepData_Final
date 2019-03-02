@@ -269,16 +269,16 @@ all_injuries <- arrange(all_injuries, desc(INJURIES))
 
 The bar graphs below show the top ten events with highest number of fatalities and injuries. 
 
-```{r, fig.width=14}
+```{r}
 par(mfrow=c(1,2), mar=c(12, 4, 3, 2))
 
 # Total Deaths Plot
 barplot(all_fatalities$FATALITIES[1:10], las=3, names.arg=all_fatalities$EVTYPE[1:10], 
-        main="Events with Highest Number of Fatalities", ylab="Number of Fatalities", col="blue")
+        main="Number of Fatalities by Event", ylab="Number of Fatalities", col="blue")
 
 # Total Injuries
 barplot(all_injuries$INJURIES[1:10], las=3, names.arg=all_injuries$EVTYPE[1:10], 
-        main="Events with Highest Number of Injuries", ylab="Number of Injuries", col="blue")
+        main="Number of Injuries by Event", ylab="Number of Injuries", col="blue")
 ```
 
 It is clear that tornados have the highest impact on human health because they result in the most fatalities and injuries. Excessive heat and heat produce the second and third highest number of fatalities, respectively. Thunderstorm winds produce the second highest number of injuries and floods produce the third highest number of injuries. 
@@ -297,7 +297,7 @@ The bar graph below shows the top ten events with the highest cost in billions o
 par(mar=c(12, 4, 3, 2))
 # Total Cost Plot
 barplot(total_cost$TOTALCOST[1:10]/10^9, las=3, names.arg=total_cost$EVTYPE[1:10], 
-        main="Events with Highest Total Cost", ylab="Cost ($Billions USD)", col="blue")
+        main="Total Cost by Event", ylab="Cost ($Billions USD)", col="blue")
 ```
 
 Flood results in highest costing damage, followed by Hurricane/Typhoon and Tornado. 
@@ -308,4 +308,4 @@ The results of the data analysis show:
 
 **Tornados are the most harmful event to human health.**  
 
-**Floods have the greatest economic impact**
+**Floods have the greatest economic impact.**
